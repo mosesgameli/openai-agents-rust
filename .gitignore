@@ -1,0 +1,23 @@
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Session databases
+*.db
+*.db-shm
+*.db-wal
