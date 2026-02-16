@@ -30,7 +30,7 @@ rand = "0.9"
 schemars = { workspace = true }
 
 # Procedural macros
-openai-agents-macros = { path = "../openai-agents-macros" }
+openai-agents-macros = { version = "0.1.0", path = "../openai-agents-macros" }
 
 # Optional features
 sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-rustls"], optional = true }
