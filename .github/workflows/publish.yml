@@ -1,0 +1,38 @@
+name: Publish to Crates.io
+
+on:
+    release:
+        types: [created]
+
+jobs:
+    check-and-publish:
+        name: Check and Publish
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Format Check
+              run: cargo fmt -- --check
+
+            - name: Lint (Clippy)
+              run: cargo clippy -- -D warnings
+
+            - name: Test
+              run: cargo test
+
+            - name: Login to Crates.io
+              run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
+
+            - name: Publish openai-agents-macros
+              run: cargo publish -p openai-agents-macros
+              continue-on-error: true
+
+            - name: Wait for macros to propagate
+              run: sleep 30
+
+            - name: Publish openai-agents
+              run: cargo publish -p openai-agents
