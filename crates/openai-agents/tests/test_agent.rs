@@ -21,9 +21,7 @@ fn test_agent_with_handoff() {
     let target_agent = Agent::builder("Target").build();
     let handoff = Handoff::new(target_agent);
 
-    let agent = Agent::builder("Main")
-        .handoff(handoff)
-        .build();
+    let agent = Agent::builder("Main").handoff(handoff).build();
 
     assert_eq!(agent.handoffs.len(), 1);
 }
@@ -31,14 +29,12 @@ fn test_agent_with_handoff() {
 #[test]
 fn test_agent_default_model() {
     let agent = Agent::builder("Test").build();
-    assert_eq!(agent.model, "gpt-4");
+    assert_eq!(agent.model, "gpt-4o-mini");
 }
 
 #[test]
 fn test_agent_parallel_tool_calls() {
-    let agent = Agent::builder("Test")
-        .parallel_tool_calls(false)
-        .build();
+    let agent = Agent::builder("Test").parallel_tool_calls(false).build();
 
     assert!(!agent.parallel_tool_calls);
 }

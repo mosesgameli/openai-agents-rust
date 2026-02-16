@@ -179,7 +179,7 @@ impl ModelProvider for OpenAIResponsesModel {
         let converted_stream = stream.map(|result| {
             result
                 .map_err(|e| AgentError::ModelError(e.to_string()))
-                .and_then(|response| {
+                .map(|response| {
                     let choice = response.choices.first();
 
                     let delta = choice
@@ -208,11 +208,11 @@ impl ModelProvider for OpenAIResponsesModel {
                         .and_then(|c| c.finish_reason.as_ref())
                         .map(|r| format!("{:?}", r));
 
-                    Ok(StreamChunk {
+                    StreamChunk {
                         delta,
                         tool_call_deltas,
                         finish_reason,
-                    })
+                    }
                 })
         });
 

@@ -54,9 +54,6 @@ pub use session::{InMemorySession, Session, SessionSettings};
 #[cfg(feature = "sqlite-session")]
 pub use session::SqliteSession;
 
-#[cfg(feature = "redis-session")]
-pub use session::RedisSession;
-
 pub use stream_events::{
     AgentUpdatedEvent, RawResponseEvent, RunItem, RunItemEventName, RunItemStreamEvent, StreamEvent,
 };

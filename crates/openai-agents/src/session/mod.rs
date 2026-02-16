@@ -23,25 +23,18 @@ pub trait Session: Send + Sync {
 
 /// Session settings
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct SessionSettings {
     /// Maximum number of items to keep in session
     pub max_items: Option<usize>,
 }
 
-impl Default for SessionSettings {
-    fn default() -> Self {
-        Self { max_items: None }
-    }
-}
 
 #[cfg(feature = "sqlite-session")]
 pub mod sqlite;
 
 #[cfg(feature = "sqlite-session")]
 pub use sqlite::SqliteSession;
-
-#[cfg(feature = "redis-session")]
-pub use redis_impl::RedisSession;
 
 /// In-memory session implementation (for testing and simple use cases)
 pub struct InMemorySession {
