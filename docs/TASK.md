@@ -30,7 +30,7 @@ Create a feature-for-feature Rust implementation of the OpenAI Agents Python SDK
 - [x] Implement OpenAI Responses API client
 - [x] Implement OpenAI Chat Completions API client
 - [x] Implement multi-provider support
-- [/] Add streaming support (structure in place, needs completion)
+- [x] Add streaming support
 
 ### Phase 5: Advanced Features
 - [ ] Implement MCP (Model Context Protocol) support

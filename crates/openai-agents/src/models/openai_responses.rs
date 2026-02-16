@@ -75,10 +75,29 @@ impl OpenAIResponsesModel {
                         name: t.name,
                         description: Some(t.description),
                         parameters: Some(t.parameters),
+                        strict: Some(true),
                     },
                 })
                 .collect();
             builder.tools(openai_tools);
+        }
+
+        if let Some(format) = request.response_format {
+            let openai_format = match format {
+                crate::models::ResponseFormat::Text => ResponseFormat::Text,
+                crate::models::ResponseFormat::JsonObject => ResponseFormat::JsonObject,
+                crate::models::ResponseFormat::JsonSchema { json_schema } => {
+                    ResponseFormat::JsonSchema {
+                        json_schema: ResponseFormatJsonSchema {
+                            name: json_schema.name,
+                            description: json_schema.description,
+                            schema: Some(json_schema.schema),
+                            strict: json_schema.strict,
+                        },
+                    }
+                }
+            };
+            builder.response_format(openai_format);
         }
 
         builder.build().unwrap()

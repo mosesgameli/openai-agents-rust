@@ -27,6 +27,7 @@ chrono = { workspace = true }
 futures = { workspace = true }
 async-stream = "0.3"
 rand = "0.9"
+schemars = { workspace = true }
 
 # Procedural macros
 openai-agents-macros = { path = "../openai-agents-macros" }

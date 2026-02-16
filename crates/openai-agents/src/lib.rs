@@ -24,6 +24,7 @@ pub mod config;
 pub mod error;
 pub mod guardrail;
 pub mod handoff;
+pub mod lifecycle;
 pub mod models;
 pub mod result;
 pub mod runner;
@@ -41,6 +42,7 @@ pub use guardrail::{
     GuardrailResult, InputGuardrail, OutputGuardrail, ToolInputGuardrail, ToolOutputGuardrail,
 };
 pub use handoff::Handoff;
+pub use lifecycle::{AgentHooks, RunHooks};
 pub use models::{
     CompletionRequest, CompletionResponse, ModelProvider, OpenAIChatCompletionsModel,
     OpenAIResponsesModel,

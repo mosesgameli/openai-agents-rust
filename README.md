@@ -165,8 +165,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 See the [`examples/`](examples/) directory for more examples:
 
-- `basic/hello_world.rs` - Simple hello world
-- More examples coming soon...
+- `examples/hello_world.rs` - Simple hello world
+- `examples/tools.rs` - Function tools usage
+- `examples/stream_text.rs` - Streaming responses
+- `examples/sessions.rs` - Persistent context and memory
 
 ## Documentation
 

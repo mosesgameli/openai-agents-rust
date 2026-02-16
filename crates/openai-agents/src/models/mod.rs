@@ -30,6 +30,25 @@ pub struct CompletionRequest {
     pub tools: Option<Vec<ToolDefinition>>,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
+    pub response_format: Option<ResponseFormat>,
+}
+
+/// Response format for structured outputs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ResponseFormat {
+    Text,
+    JsonObject,
+    JsonSchema { json_schema: JsonSchemaFormat },
+}
+
+/// JSON schema format for structured outputs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonSchemaFormat {
+    pub name: String,
+    pub description: Option<String>,
+    pub schema: Value,
+    pub strict: Option<bool>,
 }
 
 /// A message in the conversation

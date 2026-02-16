@@ -20,6 +20,8 @@ pub struct RunConfig {
     pub session: Option<Arc<dyn Session>>,
     /// Optional model provider override (useful for testing)
     pub model_override: Option<Arc<dyn ModelProvider>>,
+    /// Global lifecycle hooks for the run
+    pub run_hooks: Vec<Arc<dyn crate::lifecycle::RunHooks>>,
 }
 
 impl Default for RunConfig {
@@ -28,6 +30,7 @@ impl Default for RunConfig {
             max_turns: 100,
             session: None,
             model_override: None,
+            run_hooks: Vec::new(),
         }
     }
 }
@@ -128,19 +131,58 @@ impl Runner {
 
         // Main agent loop
         for turn in 0..config.max_turns {
+            // Trigger on_agent_start and on_start hooks
+            for hook in &config.run_hooks {
+                hook.on_agent_start(&current_agent).await?;
+            }
+            for hook in &current_agent.hooks {
+                hook.on_start(&current_agent).await?;
+            }
+
             let request = CompletionRequest {
                 messages: messages.clone(),
                 model: current_agent.model.clone(),
                 tools: current_tools.clone(),
                 max_tokens: None,
                 temperature: None,
+                response_format: current_agent.output_schema.as_ref().map(|schema| {
+                    crate::models::ResponseFormat::JsonSchema {
+                        json_schema: crate::models::JsonSchemaFormat {
+                            name: current_agent
+                                .output_name
+                                .clone()
+                                .unwrap_or_else(|| "output".to_string()),
+                            description: None,
+                            schema: schema.clone(),
+                            strict: Some(true),
+                        },
+                    }
+                }),
             };
 
+            // Trigger on_llm_start hooks
+            for hook in &current_agent.hooks {
+                hook.on_llm_start(&current_agent, &messages).await?;
+            }
+
             let response = model.complete(request).await?;
+
+            // Trigger on_llm_end hooks
+            for hook in &current_agent.hooks {
+                hook.on_llm_end(&current_agent, &response).await?;
+            }
 
             // Check if we have a final output (no tool calls)
             if let Some(content) = &response.content {
                 if response.tool_calls.is_empty() {
+                    // Trigger on_agent_end and on_end hooks
+                    for hook in &config.run_hooks {
+                        hook.on_agent_end(&current_agent, content).await?;
+                    }
+                    for hook in &current_agent.hooks {
+                        hook.on_end(&current_agent, content).await?;
+                    }
+
                     // Save conversation to session if available
                     if let Some(session) = &config.session {
                         let assistant_msg = Message {
@@ -168,6 +210,12 @@ impl Runner {
             // Handle tool calls
             if !response.tool_calls.is_empty() {
                 for tool_call in &response.tool_calls {
+                    // Trigger on_tool_start hooks
+                    for hook in &current_agent.hooks {
+                        hook.on_tool_start(&current_agent, &tool_call.name, &tool_call.arguments)
+                            .await?;
+                    }
+
                     // Check if it's a regular tool or a handoff
                     let mut tool_result = None;
                     let mut handed_off_to = None;
@@ -207,6 +255,12 @@ impl Runner {
                         )
                     })?;
 
+                    // Trigger on_tool_end hooks
+                    for hook in &current_agent.hooks {
+                        hook.on_tool_end(&current_agent, &tool_call.name, &result)
+                            .await?;
+                    }
+
                     // Add tool result as a message
                     let result_str = serde_json::to_string(&result)?;
                     messages.push(Message {
@@ -216,6 +270,14 @@ impl Runner {
 
                     // If we handed off, update current agent and rebuild tools for next turn
                     if let Some(new_agent) = handed_off_to {
+                        // Trigger on_handoff hooks
+                        for hook in &config.run_hooks {
+                            hook.on_handoff(&current_agent, &new_agent).await?;
+                        }
+                        for hook in &current_agent.hooks {
+                            hook.on_handoff(&current_agent, &new_agent).await?;
+                        }
+
                         current_agent = new_agent;
 
                         // Synchronize system message with the new agent's instructions
@@ -377,13 +439,39 @@ impl Runner {
 
             // Main agent loop with streaming
             for _turn in 0..config.max_turns {
+                // Trigger on_agent_start and on_start hooks
+                for hook in &config.run_hooks {
+                    let _ = hook.on_agent_start(&current_agent).await;
+                }
+                for hook in &current_agent.hooks {
+                    let _ = hook.on_start(&current_agent).await;
+                }
+
                 let request = CompletionRequest {
                     messages: messages.clone(),
                     model: current_agent.model.clone(),
                     tools: current_tools.clone(),
                     max_tokens: None,
                     temperature: None,
+                    response_format: current_agent.output_schema.as_ref().map(|schema| {
+                        crate::models::ResponseFormat::JsonSchema {
+                            json_schema: crate::models::JsonSchemaFormat {
+                                name: current_agent
+                                    .output_name
+                                    .clone()
+                                    .unwrap_or_else(|| "output".to_string()),
+                                description: None,
+                                schema: schema.clone(),
+                                strict: Some(true),
+                            },
+                        }
+                    }),
                 };
+
+                // Trigger on_llm_start hooks
+                for hook in &current_agent.hooks {
+                    let _ = hook.on_llm_start(&current_agent, &messages).await;
+                }
 
                 // Use actual streaming from model provider
                 let mut stream = match model.stream(request).await {
@@ -471,6 +559,11 @@ impl Runner {
                         let arguments =
                             serde_json::from_str(&args_str).unwrap_or(serde_json::json!({}));
 
+                        // Trigger on_tool_start hooks
+                        for hook in &current_agent.hooks {
+                            let _ = hook.on_tool_start(&current_agent, &name, &arguments).await;
+                        }
+
                         // Emit tool call event
                         let _ = tx.send(StreamEvent::RunItem(RunItemStreamEvent {
                             name: RunItemEventName::ToolCalled,
@@ -502,6 +595,11 @@ impl Runner {
                         }
 
                         if let Some(result) = tool_result {
+                            // Trigger on_tool_end hooks
+                            for hook in &current_agent.hooks {
+                                let _ = hook.on_tool_end(&current_agent, &name, &result).await;
+                            }
+
                             let result_str = serde_json::to_string(&result).unwrap_or_default();
 
                             // Emit tool output event
@@ -521,6 +619,14 @@ impl Runner {
 
                             // If we handed off, update current agent and rebuild tools
                             if let Some(new_agent) = handed_off_to {
+                                // Trigger on_handoff hooks
+                                for hook in &config.run_hooks {
+                                    let _ = hook.on_handoff(&current_agent, &new_agent).await;
+                                }
+                                for hook in &current_agent.hooks {
+                                    let _ = hook.on_handoff(&current_agent, &new_agent).await;
+                                }
+
                                 current_agent = new_agent;
                                 handed_off = true;
 
@@ -573,6 +679,16 @@ impl Runner {
                         // we let the loop continue to the next OpenAI turn.
                     }
                 } else {
+                    // Trigger on_agent_end and on_end hooks
+                    for hook in &config.run_hooks {
+                        let _ = hook
+                            .on_agent_end(&current_agent, &accumulated_content)
+                            .await;
+                    }
+                    for hook in &current_agent.hooks {
+                        let _ = hook.on_end(&current_agent, &accumulated_content).await;
+                    }
+
                     // No tool calls and we have content (or already handled content)
                     // This is a final response
                     break;

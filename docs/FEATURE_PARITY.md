@@ -17,7 +17,7 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 | Model configuration | ✅ | ✅ | **Complete** | - |
 | Temperature/top_p settings | ✅ | ✅ | **Complete** | - |
 | Max tokens | ✅ | ✅ | **Complete** | - |
-| Output type (structured outputs) | ✅ | ❌ | **Missing** | High |
+| Output type (structured outputs) | ✅ | ✅ | **Complete** | - |
 | Non-strict output types | ✅ | ❌ | **Missing** | Medium |
 
 ### Tool System
@@ -62,7 +62,7 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 | `Runner.run()` async | ✅ | ✅ | **Complete** | - |
 | `Runner.run_sync()` | ✅ | ❌ | **Missing** | Medium |
 | Max turns limit | ✅ | ✅ | **Complete** | - |
-| Agent lifecycle hooks | ✅ | ❌ | **Missing** | High |
+| Agent lifecycle hooks | ✅ | ✅ | **Complete** | - |
 | Run state management | ✅ | ⚠️ | **Partial** | High |
 | Resumable runs | ✅ | ❌ | **Missing** | High |
 | Human-in-the-loop | ✅ | ❌ | **Missing** | High |
@@ -80,8 +80,8 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 | `Runner.run_streamed()` | ✅ | ✅ | **Complete** | - |
 | Real-time text deltas | ✅ | ✅ | **Complete** | - |
 | Tool call delta accumulation | ✅ | ✅ | **Complete** | - |
-| Streaming with handoffs | ✅ | ❌ | **Missing** | High |
-| Streaming with structured output | ✅ | ❌ | **Missing** | High |
+| Streaming with handoffs | ✅ | ✅ | **Complete** | - |
+| Streaming with structured output | ✅ | ✅ | **Complete** | - |
 | Streaming guardrails | ✅ | ❌ | **Missing** | High |
 
 ### Session Management
@@ -91,7 +91,7 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 | Session protocol | ✅ | ✅ | **Complete** | - |
 | SQLite sessions | ✅ | ✅ | **Complete** | - |
 | Redis sessions | ✅ | ❌ | **Missing** | Medium |
-| In-memory sessions | ✅ | ❌ | **Missing** | Low |
+| In-memory sessions | ✅ | ✅ | **Complete** | - |
 | Custom session implementations | ✅ | ✅ | **Complete** | - |
 | Session persistence with RunState | ✅ | ❌ | **Missing** | High |
 
@@ -171,7 +171,7 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 
 | Category | Python SDK | Rust SDK | Gap |
 |----------|-----------|----------|-----|
-| Basic examples | 17 | 4 | 13 missing |
+| Basic examples | 17 | 6 | 11 missing |
 | Agent patterns | 13 | 0 | 13 missing |
 | Handoffs | 2 | 1 | 1 missing |
 | MCP | 4 | 0 | 4 missing |
@@ -180,7 +180,7 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 | Realtime | 2 | 0 | 2 missing |
 | Tools | 3 | 1 | 2 missing |
 | Voice | 2 | 0 | 2 missing |
-| **Total** | **48+** | **4** | **44+ missing** |
+| **Total** | **48+** | **9** | **39+ missing** |
 
 ## Summary Statistics
 
@@ -188,12 +188,12 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 
 | Category | Parity % | Notes |
 |----------|----------|-------|
-| Core Agent System | 70% | Missing output types, dynamic prompts |
+| Core Agent System | 80% | Missing non-strict types, dynamic prompts |
 | Tool System | 40% | Missing tool context, advanced features |
 | Handoffs | 50% | Basic works, missing filters/conditionals |
 | Guardrails | 60% | Missing streaming guardrails |
-| Runner & Execution | 40% | Missing lifecycle, resumable runs |
-| Streaming | 70% | ✅ Real-time streaming complete, missing advanced features |
+| Runner & Execution | 60% | Missing resumable runs, human-in-the-loop |
+| Streaming | 80% | ✅ Real-time streaming complete, structured output support added |
 | Session Management | 70% | SQLite works, missing Redis |
 | Model Providers | 60% | OpenAI works, missing multi-provider |
 | Tracing | 10% | Structure only, needs implementation |
@@ -226,35 +226,43 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
   - ✅ Real LLM streaming via OpenAI create_stream()
   - ✅ Tool call delta accumulation
 - **Remaining**:
-  - ⏳ Streaming with handoffs
+  - ✅ Streaming with handoffs
   - ⏳ Streaming with structured output
   - ⏳ Streaming guardrails
-  - ⏳ Port more streaming examples
+  - ✅ Port more streaming examples (text, items, arguments)
 
-#### 1.2 Implement Agent Lifecycle Hooks
+#### 1.2 Implement Agent Lifecycle Hooks ✅
 - **Priority**: Critical
 - **Effort**: Medium
-- **Files to modify**:
-  - `crates/openai-agents/src/agent.rs`
-  - Create `crates/openai-agents/src/lifecycle.rs`
+- **Status**: ✅ **COMPLETE**
+- **Files modified**:
+  - ✅ `crates/openai-agents/src/agent.rs`
+  - ✅ `crates/openai-agents/src/lifecycle.rs`
 - **Features**:
-  - `on_start` hook
-  - `on_end` hook
-  - `on_tool_call` hook
-  - `on_handoff` hook
+  - ✅ `on_start` hook
+  - ✅ `on_end` hook
+  - ✅ `on_llm_start` hook
+  - ✅ `on_llm_end` hook
+  - ✅ `on_tool_start` hook
+  - ✅ `on_tool_end` hook
+  - ✅ `on_handoff` hook
 - **Verification**: Port lifecycle example
 
-#### 1.3 Add Structured Output Support
+#### 1.3 Add Structured Output Support ✅
 - **Priority**: Critical
 - **Effort**: High
-- **Files to modify**:
-  - `crates/openai-agents/src/agent.rs`
-  - `crates/openai-agents/src/result.rs`
-  - Create `crates/openai-agents/src/output_type.rs`
+- **Status**: ✅ **COMPLETE**
+- **Files modified**:
+  - ✅ `crates/openai-agents/src/agent.rs`
+  - ✅ `crates/openai-agents/src/result.rs`
+  - ✅ `crates/openai-agents/src/models/mod.rs`
+  - ✅ `crates/openai-agents/src/models/openai_responses.rs`
 - **Features**:
-  - Generic output type parameter
-  - JSON schema generation
-  - Structured output parsing
+  - ✅ Generic output type parameter (`output_type<T>`)
+  - ✅ JSON schema generation (via `schemars`)
+  - ✅ Strict schema post-processing (`additionalProperties: false`)
+  - ✅ Structured output parsing in `Runner`
+  - ✅ Result retrieval via `final_output_as<T>()`
 - **Verification**: Port structured output examples
 
 #### 1.4 Implement RunState & Resumable Runs
