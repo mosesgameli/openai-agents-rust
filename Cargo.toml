@@ -53,7 +53,7 @@ quote = "1.0"
 proc-macro2 = "1.0"
 
 # Schema generation
-schemars = "0.8"
+schemars = "1.2"
 
 [profile.release]
 opt-level = 3
