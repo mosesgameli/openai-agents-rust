@@ -47,7 +47,7 @@ pub use models::{
 };
 pub use result::{RunResult, RunResultStreaming};
 pub use runner::{RunConfig, Runner};
-pub use session::{Session, SessionSettings};
+pub use session::{InMemorySession, Session, SessionSettings};
 
 #[cfg(feature = "sqlite-session")]
 pub use session::SqliteSession;

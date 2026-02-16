@@ -8,6 +8,7 @@ use crate::{
     models::{CompletionRequest, Message, ModelProvider, OpenAIResponsesModel, ToolDefinition},
     result::RunResult,
     session::Session,
+    tool::Tool,
 };
 
 /// Configuration for running an agent
@@ -17,6 +18,8 @@ pub struct RunConfig {
     pub max_turns: usize,
     /// Optional session for conversation history
     pub session: Option<Arc<dyn Session>>,
+    /// Optional model provider override (useful for testing)
+    pub model_override: Option<Arc<dyn ModelProvider>>,
 }
 
 impl Default for RunConfig {
@@ -24,6 +27,7 @@ impl Default for RunConfig {
         Self {
             max_turns: 100,
             session: None,
+            model_override: None,
         }
     }
 }
@@ -86,32 +90,48 @@ impl Runner {
             content: input.clone(),
         });
 
-        // Create model provider
-        let model = OpenAIResponsesModel::new();
+        // Initialize model provider
+        let model: Arc<dyn ModelProvider> = if let Some(m) = config.model_override.clone() {
+            m
+        } else {
+            Arc::new(OpenAIResponsesModel::new())
+        };
 
-        // Convert agent tools to tool definitions
-        let tools = if !agent.tools.is_empty() {
-            Some(
-                agent
-                    .tools
-                    .iter()
-                    .map(|tool| ToolDefinition {
-                        name: tool.name().to_string(),
-                        description: tool.description().to_string(),
-                        parameters: tool.parameters_schema(),
-                    })
-                    .collect(),
-            )
+        // Convert agent tools and handoffs to tool definitions
+        let mut tool_definitions = Vec::new();
+
+        for tool in &agent.tools {
+            tool_definitions.push(ToolDefinition {
+                name: tool.name().to_string(),
+                description: tool.description().to_string(),
+                parameters: tool.parameters_schema(),
+            });
+        }
+
+        for handoff in &agent.handoffs {
+            tool_definitions.push(ToolDefinition {
+                name: handoff.name().to_string(),
+                description: handoff.description().to_string(),
+                parameters: handoff.parameters_schema(),
+            });
+        }
+
+        let tools = if !tool_definitions.is_empty() {
+            Some(tool_definitions)
         } else {
             None
         };
+
+        // We use Arc to manage the current agent so we can easily swap it during handoffs
+        let mut current_agent: Arc<Agent> = Arc::new(agent.clone());
+        let mut current_tools = tools;
 
         // Main agent loop
         for turn in 0..config.max_turns {
             let request = CompletionRequest {
                 messages: messages.clone(),
-                model: agent.model.clone(),
-                tools: tools.clone(),
+                model: current_agent.model.clone(),
+                tools: current_tools.clone(),
                 max_tokens: None,
                 temperature: None,
             };
@@ -148,23 +168,44 @@ impl Runner {
             // Handle tool calls
             if !response.tool_calls.is_empty() {
                 for tool_call in &response.tool_calls {
-                    // Find the tool
-                    let tool = agent
+                    // Check if it's a regular tool or a handoff
+                    let mut tool_result = None;
+                    let mut handed_off_to = None;
+
+                    // Search in agent tools
+                    if let Some(tool) = current_agent
                         .tools
                         .iter()
                         .find(|t| t.name() == tool_call.name)
-                        .ok_or_else(|| {
-                            AgentError::tool_failed(
-                                &tool_call.name,
-                                format!("Tool '{}' not found", tool_call.name),
-                            )
-                        })?;
+                    {
+                        let result = tool
+                            .execute(tool_call.arguments.clone())
+                            .await
+                            .map_err(|e| AgentError::tool_failed(&tool_call.name, e.to_string()))?;
+                        tool_result = Some(result);
+                    } else if let Some(handoff) = current_agent
+                        .handoffs
+                        .iter()
+                        .find(|h| h.name() == tool_call.name)
+                    {
+                        let result = handoff
+                            .execute(tool_call.arguments.clone())
+                            .await
+                            .map_err(|e| AgentError::tool_failed(&tool_call.name, e.to_string()))?;
 
-                    // Execute the tool
-                    let result = tool
-                        .execute(tool_call.arguments.clone())
-                        .await
-                        .map_err(|e| AgentError::tool_failed(&tool_call.name, e.to_string()))?;
+                        if let Some(_target_name) = result.get("assistant").and_then(|v| v.as_str())
+                        {
+                            handed_off_to = Some(handoff.target_agent.clone());
+                        }
+                        tool_result = Some(result);
+                    }
+
+                    let result = tool_result.ok_or_else(|| {
+                        AgentError::tool_failed(
+                            &tool_call.name,
+                            format!("Tool '{}' not found", tool_call.name),
+                        )
+                    })?;
 
                     // Add tool result as a message
                     let result_str = serde_json::to_string(&result)?;
@@ -172,6 +213,46 @@ impl Runner {
                         role: "tool".to_string(),
                         content: format!("Tool '{}' returned: {}", tool_call.name, result_str),
                     });
+
+                    // If we handed off, update current agent and rebuild tools for next turn
+                    if let Some(new_agent) = handed_off_to {
+                        current_agent = new_agent;
+
+                        // Synchronize system message with the new agent's instructions
+                        if !messages.is_empty() && messages[0].role == "system" {
+                            messages[0].content = current_agent.instructions.clone();
+                        } else if !current_agent.instructions.is_empty() {
+                            messages.insert(
+                                0,
+                                Message {
+                                    role: "system".to_string(),
+                                    content: current_agent.instructions.clone(),
+                                },
+                            );
+                        }
+
+                        // Rebuild tools for the new agent
+                        let mut next_tool_definitions = Vec::new();
+                        for tool in &current_agent.tools {
+                            next_tool_definitions.push(ToolDefinition {
+                                name: tool.name().to_string(),
+                                description: tool.description().to_string(),
+                                parameters: tool.parameters_schema(),
+                            });
+                        }
+                        for handoff in &current_agent.handoffs {
+                            next_tool_definitions.push(ToolDefinition {
+                                name: handoff.name().to_string(),
+                                description: handoff.description().to_string(),
+                                parameters: handoff.parameters_schema(),
+                            });
+                        }
+                        current_tools = if !next_tool_definitions.is_empty() {
+                            Some(next_tool_definitions)
+                        } else {
+                            None
+                        };
+                    }
                 }
             }
 
@@ -190,6 +271,7 @@ impl Runner {
     ///
     /// ```rust,no_run
     /// use openai_agents::{Agent, Runner};
+    /// use futures::StreamExt;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let agent = Agent::builder("Assistant")
@@ -225,12 +307,22 @@ impl Runner {
         use tokio::sync::mpsc;
 
         let (tx, rx) = mpsc::unbounded_channel();
+        let (streamed_result, shared_state) = crate::streaming::StreamedRunResult::new(rx);
         let input = input.into();
+
+        // Initialize model provider
+        let model: Arc<dyn ModelProvider> = if let Some(m) = config.model_override.clone() {
+            m
+        } else {
+            Arc::new(OpenAIResponsesModel::new())
+        };
 
         // Spawn a task to run the agent and emit events
         let agent = agent.clone();
+        let shared_state_bg = shared_state.clone();
         tokio::spawn(async move {
             let mut messages = Vec::new();
+            let mut final_output = String::new();
 
             // Add system message if agent has instructions
             if !agent.instructions.is_empty() {
@@ -254,25 +346,31 @@ impl Runner {
             // Add user input
             messages.push(Message {
                 role: "user".to_string(),
-                content: input.clone(),
+                content: input.to_string(),
             });
 
-            // Create model provider
-            let model = OpenAIResponsesModel::new();
+            // Initial current agent and tools
+            let mut current_agent = Arc::new(agent.clone());
 
-            // Convert agent tools to tool definitions
-            let tools = if !agent.tools.is_empty() {
-                Some(
-                    agent
-                        .tools
-                        .iter()
-                        .map(|tool| ToolDefinition {
-                            name: tool.name().to_string(),
-                            description: tool.description().to_string(),
-                            parameters: tool.parameters_schema(),
-                        })
-                        .collect(),
-                )
+            // Convert agent tools and handoffs to tool definitions
+            let mut tool_definitions = Vec::new();
+            for tool in &current_agent.tools {
+                tool_definitions.push(ToolDefinition {
+                    name: tool.name().to_string(),
+                    description: tool.description().to_string(),
+                    parameters: tool.parameters_schema(),
+                });
+            }
+            for handoff in &current_agent.handoffs {
+                tool_definitions.push(ToolDefinition {
+                    name: handoff.name().to_string(),
+                    description: handoff.description().to_string(),
+                    parameters: handoff.parameters_schema(),
+                });
+            }
+
+            let mut current_tools = if !tool_definitions.is_empty() {
+                Some(tool_definitions)
             } else {
                 None
             };
@@ -281,8 +379,8 @@ impl Runner {
             for _turn in 0..config.max_turns {
                 let request = CompletionRequest {
                     messages: messages.clone(),
-                    model: agent.model.clone(),
-                    tools: tools.clone(),
+                    model: current_agent.model.clone(),
+                    tools: current_tools.clone(),
                     max_tokens: None,
                     temperature: None,
                 };
@@ -290,7 +388,12 @@ impl Runner {
                 // Use actual streaming from model provider
                 let mut stream = match model.stream(request).await {
                     Ok(s) => s,
-                    Err(_e) => break,
+                    Err(e) => {
+                        let _ = tx.send(StreamEvent::RawResponse(RawResponseEvent {
+                            data: format!("Error: {}", e),
+                        }));
+                        break;
+                    }
                 };
 
                 let mut accumulated_content = String::new();
@@ -307,7 +410,7 @@ impl Runner {
                     if let Some(delta) = &chunk.delta {
                         accumulated_content.push_str(delta);
                         let _ = tx.send(StreamEvent::RawResponse(RawResponseEvent {
-                            data: delta.clone(),
+                            data: delta.to_string(),
                         }));
                     }
 
@@ -340,8 +443,14 @@ impl Runner {
                     }
                 }
 
-                // Check if we have a final output (no tool calls)
-                if !accumulated_content.is_empty() && accumulated_tool_calls.is_empty() {
+                // Add assistant message if we have content
+                if !accumulated_content.is_empty() {
+                    final_output = accumulated_content.clone();
+                    messages.push(Message {
+                        role: "assistant".to_string(),
+                        content: accumulated_content.clone(),
+                    });
+
                     // Emit message output event
                     let _ = tx.send(StreamEvent::RunItem(RunItemStreamEvent {
                         name: RunItemEventName::MessageOutputCreated,
@@ -349,41 +458,18 @@ impl Runner {
                             content: accumulated_content.clone(),
                         },
                     }));
-
-                    // Save conversation to session if available
-                    if let Some(session) = &config.session {
-                        let assistant_msg = Message {
-                            role: "assistant".to_string(),
-                            content: accumulated_content.clone(),
-                        };
-                        let _ = session
-                            .add_items(vec![
-                                serde_json::to_value(&messages[messages.len() - 1]).unwrap(),
-                                serde_json::to_value(&assistant_msg).unwrap(),
-                            ])
-                            .await;
-                    }
-
-                    break;
-                }
-
-                // Add assistant message if we have content
-                if !accumulated_content.is_empty() {
-                    messages.push(Message {
-                        role: "assistant".to_string(),
-                        content: accumulated_content.clone(),
-                    });
                 }
 
                 // Handle tool calls
                 if !accumulated_tool_calls.is_empty() {
-                    for (_id, name, args_str) in &accumulated_tool_calls {
+                    let mut handed_off = false;
+                    for (_id, name, args_str) in accumulated_tool_calls {
                         if name.is_empty() {
                             continue;
                         }
 
                         let arguments =
-                            serde_json::from_str(args_str).unwrap_or(serde_json::json!({}));
+                            serde_json::from_str(&args_str).unwrap_or(serde_json::json!({}));
 
                         // Emit tool call event
                         let _ = tx.send(StreamEvent::RunItem(RunItemStreamEvent {
@@ -394,34 +480,110 @@ impl Runner {
                             },
                         }));
 
-                        // Find and execute the tool
-                        if let Some(tool) = agent.tools.iter().find(|t| t.name() == name) {
-                            if let Ok(result) = tool.execute(arguments.clone()).await {
-                                let result_str = serde_json::to_string(&result).unwrap_or_default();
+                        let mut tool_result = None;
+                        let mut handed_off_to = None;
 
-                                // Emit tool output event
-                                let _ = tx.send(StreamEvent::RunItem(RunItemStreamEvent {
-                                    name: RunItemEventName::ToolOutput,
-                                    item: RunItem::ToolOutput {
-                                        name: name.clone(),
-                                        output: result_str.clone(),
-                                    },
+                        // Search in agent tools
+                        if let Some(tool) = current_agent.tools.iter().find(|t| t.name() == name) {
+                            if let Ok(result) = tool.execute(arguments.clone()).await {
+                                tool_result = Some(result);
+                            }
+                        } else if let Some(handoff) =
+                            current_agent.handoffs.iter().find(|h| h.name() == name)
+                        {
+                            if let Ok(result) = handoff.execute(arguments.clone()).await {
+                                if let Some(_target_name) =
+                                    result.get("assistant").and_then(|v| v.as_str())
+                                {
+                                    handed_off_to = Some(handoff.target_agent.clone());
+                                }
+                                tool_result = Some(result);
+                            }
+                        }
+
+                        if let Some(result) = tool_result {
+                            let result_str = serde_json::to_string(&result).unwrap_or_default();
+
+                            // Emit tool output event
+                            let _ = tx.send(StreamEvent::RunItem(RunItemStreamEvent {
+                                name: RunItemEventName::ToolOutput,
+                                item: RunItem::ToolOutput {
+                                    name: name.clone(),
+                                    output: result_str.clone(),
+                                },
+                            }));
+
+                            // Add tool result as a message
+                            messages.push(Message {
+                                role: "tool".to_string(),
+                                content: format!("Tool '{}' returned: {}", name, result_str),
+                            });
+
+                            // If we handed off, update current agent and rebuild tools
+                            if let Some(new_agent) = handed_off_to {
+                                current_agent = new_agent;
+                                handed_off = true;
+
+                                // Emit agent updated event
+                                use crate::stream_events::AgentUpdatedEvent;
+                                let _ = tx.send(StreamEvent::AgentUpdated(AgentUpdatedEvent {
+                                    new_agent: (*current_agent).clone(),
                                 }));
 
-                                // Add tool result as a message
-                                messages.push(Message {
-                                    role: "tool".to_string(),
-                                    content: format!("Tool '{}' returned: {}", name, result_str),
-                                });
+                                // Synchronize system message
+                                if !messages.is_empty() && messages[0].role == "system" {
+                                    messages[0].content = current_agent.instructions.clone();
+                                } else if !current_agent.instructions.is_empty() {
+                                    messages.insert(
+                                        0,
+                                        Message {
+                                            role: "system".to_string(),
+                                            content: current_agent.instructions.clone(),
+                                        },
+                                    );
+                                }
+
+                                // Rebuild tools
+                                let mut next_tool_definitions = Vec::new();
+                                for tool in &current_agent.tools {
+                                    next_tool_definitions.push(ToolDefinition {
+                                        name: tool.name().to_string(),
+                                        description: tool.description().to_string(),
+                                        parameters: tool.parameters_schema(),
+                                    });
+                                }
+                                for handoff in &current_agent.handoffs {
+                                    next_tool_definitions.push(ToolDefinition {
+                                        name: handoff.name().to_string(),
+                                        description: handoff.description().to_string(),
+                                        parameters: handoff.parameters_schema(),
+                                    });
+                                }
+                                current_tools = if !next_tool_definitions.is_empty() {
+                                    Some(next_tool_definitions)
+                                } else {
+                                    None
+                                };
                             }
                         }
                     }
+
+                    if !handed_off {
+                        // If we had tool calls but no handoff, and the model might want to say more,
+                        // we let the loop continue to the next OpenAI turn.
+                    }
+                } else {
+                    // No tool calls and we have content (or already handled content)
+                    // This is a final response
+                    break;
                 }
             }
 
-            // Channel will close when tx is dropped
+            // Set final result
+            let mut state = shared_state_bg.lock().unwrap();
+            state.final_result = Some(RunResult::new(final_output));
         });
 
-        Ok(crate::streaming::StreamedRunResult::new(rx))
+        Ok(streamed_result)
     }
 }

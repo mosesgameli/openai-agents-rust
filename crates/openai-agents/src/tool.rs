@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::error::Result;
 
-/// Trait for tools that can be used by agents
+/// Trait for tools that agents can use
 #[async_trait]
 pub trait Tool: Send + Sync {
     /// Get the name of the tool

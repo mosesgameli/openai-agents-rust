@@ -2,7 +2,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, FnArg, ItemFn, ReturnType};
+use syn::{parse_macro_input, ItemFn};
 
 /// Procedural macro for creating function tools
 ///
@@ -24,48 +24,72 @@ pub fn function_tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let fn_name = &input.sig.ident;
     let fn_vis = &input.vis;
-    let fn_block = &input.block;
-    let fn_attrs = &input.attrs;
 
-    // Extract function parameters
-    let params: Vec<_> = input
-        .sig
-        .inputs
-        .iter()
-        .filter_map(|arg| {
-            if let FnArg::Typed(pat_type) = arg {
-                Some(pat_type)
-            } else {
-                None
+    // Extract description from doc comments
+    let mut description = String::new();
+    for attr in &input.attrs {
+        if attr.path().is_ident("doc") {
+            if let syn::Meta::NameValue(syn::MetaNameValue {
+                value:
+                    syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(s),
+                        ..
+                    }),
+                ..
+            }) = &attr.meta
+            {
+                let val = s.value().trim().to_string();
+                if !description.is_empty() {
+                    description.push(' ');
+                }
+                description.push_str(&val);
             }
-        })
-        .collect();
+        }
+    }
+    if description.is_empty() {
+        description = fn_name.to_string();
+    }
 
-    // Extract return type
-    let return_type = match &input.sig.output {
-        ReturnType::Default => quote! { () },
-        ReturnType::Type(_, ty) => quote! { #ty },
-    };
+    // Extract function parameters for schema and execution
+    let mut properties = Vec::new();
+    let mut required = Vec::new();
+    let mut param_names = Vec::new();
+    let mut param_deserialization = Vec::new();
 
-    // Note: param_names and param_types will be used in future enhancements
-    // for proper JSON schema generation and argument deserialization
-    let _param_names: Vec<_> = params.iter().map(|p| &p.pat).collect();
+    for arg in &input.sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = arg {
+            if let syn::Pat::Ident(pat_ident) = &*pat_type.pat {
+                let name = &pat_ident.ident;
+                let name_str = name.to_string();
 
-    let _param_types: Vec<_> = params.iter().map(|p| &p.ty).collect();
+                // For now, assume everything is a string/deserializable
+                properties.push(quote! {
+                    #name_str: {
+                        "type": "string"
+                    }
+                });
+                required.push(quote! { #name_str });
+                param_names.push(name);
 
-    // Generate the tool struct name
+                param_deserialization.push(quote! {
+                    let #name = serde_json::from_value(args[#name_str].clone())
+                        .map_err(|e| openai_agents::AgentError::tool_failed(stringify!(#fn_name), e.to_string()))?;
+                });
+            }
+        }
+    }
+
+    // Generate the tool struct name (uppercase version of fn name + Tool)
     let tool_struct_name = syn::Ident::new(
         &format!("{}Tool", fn_name.to_string().to_uppercase()),
         fn_name.span(),
     );
 
     let expanded = quote! {
-        #(#fn_attrs)*
-        #fn_vis async fn #fn_name(#(#params),*) -> #return_type {
-            #fn_block
-        }
+        #input
 
         #[allow(non_camel_case_types)]
+        #[derive(Clone, Copy)]
         #fn_vis struct #tool_struct_name;
 
         #[async_trait::async_trait]
@@ -75,23 +99,23 @@ pub fn function_tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             fn description(&self) -> &str {
-                // TODO: Extract from doc comments
-                stringify!(#fn_name)
+                #description
             }
 
             fn parameters_schema(&self) -> serde_json::Value {
-                // TODO: Generate JSON schema from parameters
                 serde_json::json!({
                     "type": "object",
-                    "properties": {},
-                    "required": []
+                    "properties": {
+                        #(#properties),*
+                    },
+                    "required": [#(#required),*]
                 })
             }
 
             async fn execute(&self, args: serde_json::Value) -> openai_agents::Result<serde_json::Value> {
-                // TODO: Deserialize args and call function properly
-                // For now, just return a placeholder
-                Ok(serde_json::json!("Tool executed"))
+                #(#param_deserialization)*
+                let result = #fn_name(#(#param_names),*).await;
+                Ok(serde_json::to_value(result).map_err(|e| openai_agents::AgentError::tool_failed(stringify!(#fn_name), e.to_string()))?)
             }
         }
     };

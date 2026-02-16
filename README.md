@@ -205,3 +205,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Acknowledgements
 
 This is a Rust port of the [OpenAI Agents Python SDK](https://github.com/openai/openai-agents-python). Special thanks to the OpenAI team and the Rust community.
+
+Original project source can be referenced at the local path: `/Users/mosesgameli/Lessons/openai-agents-python`

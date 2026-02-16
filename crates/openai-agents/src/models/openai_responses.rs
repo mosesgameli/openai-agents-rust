@@ -63,11 +63,25 @@ impl OpenAIResponsesModel {
             })
             .collect();
 
-        CreateChatCompletionRequestArgs::default()
-            .model(&request.model)
-            .messages(messages)
-            .build()
-            .unwrap()
+        let mut builder = CreateChatCompletionRequestArgs::default();
+        builder.model(&request.model).messages(messages);
+
+        if let Some(tools) = request.tools {
+            let openai_tools: Vec<ChatCompletionTool> = tools
+                .into_iter()
+                .map(|t| ChatCompletionTool {
+                    r#type: ChatCompletionToolType::Function,
+                    function: FunctionObject {
+                        name: t.name,
+                        description: Some(t.description),
+                        parameters: Some(t.parameters),
+                    },
+                })
+                .collect();
+            builder.tools(openai_tools);
+        }
+
+        builder.build().unwrap()
     }
 
     fn convert_response(

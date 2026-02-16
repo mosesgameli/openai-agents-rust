@@ -1,4 +1,4 @@
-//! Handoffs example - multi-agent workflow
+// Handoffs example - multi-agent workflow
 
 use openai_agents::{Agent, Handoff, Runner};
 
