@@ -73,12 +73,16 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 
 | Feature | Python SDK | Rust SDK | Status | Priority |
 |---------|-----------|----------|--------|----------|
-| Stream text | ✅ | ⚠️ | **Partial** | High |
-| Stream items | ✅ | ❌ | **Missing** | High |
-| Stream function call args | ✅ | ❌ | **Missing** | High |
-| Stream events | ✅ | ❌ | **Missing** | High |
+| Stream text | ✅ | ✅ | **Complete** | - |
+| Stream items | ✅ | ✅ | **Complete** | - |
+| Stream function call args | ✅ | ✅ | **Complete** | - |
+| Stream events | ✅ | ✅ | **Complete** | - |
+| `Runner.run_streamed()` | ✅ | ✅ | **Complete** | - |
+| Real-time text deltas | ✅ | ✅ | **Complete** | - |
+| Tool call delta accumulation | ✅ | ✅ | **Complete** | - |
 | Streaming with handoffs | ✅ | ❌ | **Missing** | High |
 | Streaming with structured output | ✅ | ❌ | **Missing** | High |
+| Streaming guardrails | ✅ | ❌ | **Missing** | High |
 
 ### Session Management
 
@@ -180,7 +184,7 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 
 ## Summary Statistics
 
-### Overall Feature Parity: ~35%
+### Overall Feature Parity: ~42%
 
 | Category | Parity % | Notes |
 |----------|----------|-------|
@@ -189,7 +193,7 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 | Handoffs | 50% | Basic works, missing filters/conditionals |
 | Guardrails | 60% | Missing streaming guardrails |
 | Runner & Execution | 40% | Missing lifecycle, resumable runs |
-| Streaming | 20% | Basic structure, needs full implementation |
+| Streaming | 70% | ✅ Real-time streaming complete, missing advanced features |
 | Session Management | 70% | SQLite works, missing Redis |
 | Model Providers | 60% | OpenAI works, missing multi-provider |
 | Tracing | 10% | Structure only, needs implementation |
@@ -204,19 +208,28 @@ This document provides a comprehensive comparison between the Python SDK (`~/Les
 
 ### Phase 1: Critical Features (Weeks 1-2)
 
-#### 1.1 Complete Streaming Support
+#### 1.1 Complete Streaming Support ✅
 - **Priority**: Critical
 - **Effort**: High
-- **Files to modify**:
-  - `crates/openai-agents/src/runner.rs`
-  - Create `crates/openai-agents/src/streaming.rs`
-  - Create `crates/openai-agents/src/stream_events.rs`
-- **Features**:
-  - Stream text chunks
-  - Stream items (tool calls, handoffs)
-  - Stream function call arguments
-  - Stream events enum
-- **Verification**: Port streaming examples from Python SDK
+- **Status**: ✅ **COMPLETE**
+- **Files modified**:
+  - ✅ `crates/openai-agents/src/runner.rs` - Added `run_streamed()` methods
+  - ✅ `crates/openai-agents/src/streaming.rs` - StreamedRunResult implementation
+  - ✅ `crates/openai-agents/src/stream_events.rs` - StreamEvent enum
+  - ✅ `crates/openai-agents/src/models/mod.rs` - CompletionStream types
+  - ✅ `crates/openai-agents/src/models/openai_responses.rs` - Real streaming
+- **Features Implemented**:
+  - ✅ Stream text chunks (real-time deltas)
+  - ✅ Stream items (tool calls, message outputs)
+  - ✅ Stream function call arguments (delta accumulation)
+  - ✅ Stream events enum (RawResponse, RunItem, AgentUpdated)
+  - ✅ Real LLM streaming via OpenAI create_stream()
+  - ✅ Tool call delta accumulation
+- **Remaining**:
+  - ⏳ Streaming with handoffs
+  - ⏳ Streaming with structured output
+  - ⏳ Streaming guardrails
+  - ⏳ Port more streaming examples
 
 #### 1.2 Implement Agent Lifecycle Hooks
 - **Priority**: Critical
