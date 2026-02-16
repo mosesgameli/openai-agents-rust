@@ -126,8 +126,63 @@ impl ModelProvider for OpenAIResponsesModel {
         self.convert_response(response)
     }
 
-    async fn stream(&self, _request: CompletionRequest) -> Result<CompletionStream> {
-        // TODO: Implement streaming
-        Ok(CompletionStream::new(()))
+    async fn stream(&self, request: CompletionRequest) -> Result<CompletionStream> {
+        use crate::models::{StreamChunk, ToolCallDelta};
+        use futures::StreamExt;
+
+        let mut openai_request = self.convert_request(request);
+
+        // Enable streaming
+        openai_request.stream = Some(true);
+
+        let stream = self
+            .client
+            .chat()
+            .create_stream(openai_request)
+            .await
+            .map_err(|e| AgentError::ModelError(e.to_string()))?;
+
+        // Convert OpenAI stream to our StreamChunk format
+        let converted_stream = stream.map(|result| {
+            result
+                .map_err(|e| AgentError::ModelError(e.to_string()))
+                .and_then(|response| {
+                    let choice = response.choices.first();
+
+                    let delta = choice
+                        .and_then(|c| c.delta.content.as_ref())
+                        .map(|s| s.to_string());
+
+                    let tool_call_deltas = choice
+                        .and_then(|c| c.delta.tool_calls.as_ref())
+                        .map(|calls| {
+                            calls
+                                .iter()
+                                .map(|tc| ToolCallDelta {
+                                    index: tc.index as usize,
+                                    id: tc.id.clone(),
+                                    name: tc.function.as_ref().and_then(|f| f.name.clone()),
+                                    arguments: tc
+                                        .function
+                                        .as_ref()
+                                        .and_then(|f| f.arguments.clone()),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    let finish_reason = choice
+                        .and_then(|c| c.finish_reason.as_ref())
+                        .map(|r| format!("{:?}", r));
+
+                    Ok(StreamChunk {
+                        delta,
+                        tool_call_deltas,
+                        finish_reason,
+                    })
+                })
+        });
+
+        Ok(CompletionStream::new(converted_stream))
     }
 }

@@ -6,11 +6,11 @@ use serde_json::Value;
 
 use crate::error::Result;
 
-pub mod openai_responses;
 pub mod openai_chat_completions;
+pub mod openai_responses;
 
-pub use openai_responses::OpenAIResponsesModel;
 pub use openai_chat_completions::OpenAIChatCompletionsModel;
+pub use openai_responses::OpenAIResponsesModel;
 
 /// Trait for model providers
 #[async_trait]
@@ -65,11 +65,42 @@ pub struct ToolCall {
 
 /// A streaming completion response
 pub struct CompletionStream {
-    // TODO: Implement streaming
+    inner: Box<dyn futures::Stream<Item = Result<StreamChunk>> + Send + Unpin>,
+}
+
+/// A chunk from a streaming response
+#[derive(Debug, Clone)]
+pub struct StreamChunk {
+    /// Text delta (incremental content)
+    pub delta: Option<String>,
+    /// Tool call deltas
+    pub tool_call_deltas: Vec<ToolCallDelta>,
+    /// Finish reason if this is the last chunk
+    pub finish_reason: Option<String>,
+}
+
+/// A delta for a tool call
+#[derive(Debug, Clone)]
+pub struct ToolCallDelta {
+    pub index: usize,
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub arguments: Option<String>,
 }
 
 impl CompletionStream {
-    pub fn new(_stream: impl Send) -> Self {
-        Self {}
+    pub fn new<S>(stream: S) -> Self
+    where
+        S: futures::Stream<Item = Result<StreamChunk>> + Send + Unpin + 'static,
+    {
+        Self {
+            inner: Box::new(stream),
+        }
+    }
+
+    /// Get the next chunk from the stream
+    pub async fn next(&mut self) -> Option<Result<StreamChunk>> {
+        use futures::StreamExt;
+        self.inner.next().await
     }
 }

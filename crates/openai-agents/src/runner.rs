@@ -287,78 +287,123 @@ impl Runner {
                     temperature: None,
                 };
 
-                // For now, use non-streaming completion
-                // TODO: Implement actual streaming from model provider
-                let response = match model.complete(request).await {
-                    Ok(r) => r,
+                // Use actual streaming from model provider
+                let mut stream = match model.stream(request).await {
+                    Ok(s) => s,
                     Err(_e) => break,
                 };
 
-                // Emit raw response event (simulated)
-                if let Some(content) = &response.content {
-                    let _ = tx.send(StreamEvent::RawResponse(RawResponseEvent {
-                        data: content.clone(),
-                    }));
+                let mut accumulated_content = String::new();
+                let mut accumulated_tool_calls: Vec<(String, String, String)> = Vec::new(); // (id, name, args)
+
+                // Stream chunks and emit events
+                while let Some(chunk_result) = stream.next().await {
+                    let chunk = match chunk_result {
+                        Ok(c) => c,
+                        Err(_) => break,
+                    };
+
+                    // Emit text deltas as raw response events
+                    if let Some(delta) = &chunk.delta {
+                        accumulated_content.push_str(delta);
+                        let _ = tx.send(StreamEvent::RawResponse(RawResponseEvent {
+                            data: delta.clone(),
+                        }));
+                    }
+
+                    // Accumulate tool call deltas
+                    for tc_delta in &chunk.tool_call_deltas {
+                        // Ensure we have enough space in the vector
+                        while accumulated_tool_calls.len() <= tc_delta.index {
+                            accumulated_tool_calls.push((
+                                String::new(),
+                                String::new(),
+                                String::new(),
+                            ));
+                        }
+
+                        let (id, name, args) = &mut accumulated_tool_calls[tc_delta.index];
+                        if let Some(ref delta_id) = tc_delta.id {
+                            id.push_str(delta_id);
+                        }
+                        if let Some(ref delta_name) = tc_delta.name {
+                            name.push_str(delta_name);
+                        }
+                        if let Some(ref delta_args) = tc_delta.arguments {
+                            args.push_str(delta_args);
+                        }
+                    }
+
+                    // Check for finish
+                    if chunk.finish_reason.is_some() {
+                        break;
+                    }
                 }
 
                 // Check if we have a final output (no tool calls)
-                if let Some(content) = &response.content {
-                    if response.tool_calls.is_empty() {
-                        // Emit message output event
-                        let _ = tx.send(StreamEvent::RunItem(RunItemStreamEvent {
-                            name: RunItemEventName::MessageOutputCreated,
-                            item: RunItem::MessageOutput {
-                                content: content.clone(),
-                            },
-                        }));
+                if !accumulated_content.is_empty() && accumulated_tool_calls.is_empty() {
+                    // Emit message output event
+                    let _ = tx.send(StreamEvent::RunItem(RunItemStreamEvent {
+                        name: RunItemEventName::MessageOutputCreated,
+                        item: RunItem::MessageOutput {
+                            content: accumulated_content.clone(),
+                        },
+                    }));
 
-                        // Save conversation to session if available
-                        if let Some(session) = &config.session {
-                            let assistant_msg = Message {
-                                role: "assistant".to_string(),
-                                content: content.clone(),
-                            };
-                            let _ = session
-                                .add_items(vec![
-                                    serde_json::to_value(&messages[messages.len() - 1]).unwrap(),
-                                    serde_json::to_value(&assistant_msg).unwrap(),
-                                ])
-                                .await;
-                        }
-
-                        break;
+                    // Save conversation to session if available
+                    if let Some(session) = &config.session {
+                        let assistant_msg = Message {
+                            role: "assistant".to_string(),
+                            content: accumulated_content.clone(),
+                        };
+                        let _ = session
+                            .add_items(vec![
+                                serde_json::to_value(&messages[messages.len() - 1]).unwrap(),
+                                serde_json::to_value(&assistant_msg).unwrap(),
+                            ])
+                            .await;
                     }
 
-                    // Add assistant message with content
+                    break;
+                }
+
+                // Add assistant message if we have content
+                if !accumulated_content.is_empty() {
                     messages.push(Message {
                         role: "assistant".to_string(),
-                        content: content.clone(),
+                        content: accumulated_content.clone(),
                     });
                 }
 
                 // Handle tool calls
-                if !response.tool_calls.is_empty() {
-                    for tool_call in &response.tool_calls {
+                if !accumulated_tool_calls.is_empty() {
+                    for (_id, name, args_str) in &accumulated_tool_calls {
+                        if name.is_empty() {
+                            continue;
+                        }
+
+                        let arguments =
+                            serde_json::from_str(args_str).unwrap_or(serde_json::json!({}));
+
                         // Emit tool call event
                         let _ = tx.send(StreamEvent::RunItem(RunItemStreamEvent {
                             name: RunItemEventName::ToolCalled,
                             item: RunItem::ToolCall {
-                                name: tool_call.name.clone(),
-                                arguments: tool_call.arguments.clone(),
+                                name: name.clone(),
+                                arguments: arguments.clone(),
                             },
                         }));
 
                         // Find and execute the tool
-                        if let Some(tool) = agent.tools.iter().find(|t| t.name() == tool_call.name)
-                        {
-                            if let Ok(result) = tool.execute(tool_call.arguments.clone()).await {
+                        if let Some(tool) = agent.tools.iter().find(|t| t.name() == name) {
+                            if let Ok(result) = tool.execute(arguments.clone()).await {
                                 let result_str = serde_json::to_string(&result).unwrap_or_default();
 
                                 // Emit tool output event
                                 let _ = tx.send(StreamEvent::RunItem(RunItemStreamEvent {
                                     name: RunItemEventName::ToolOutput,
                                     item: RunItem::ToolOutput {
-                                        name: tool_call.name.clone(),
+                                        name: name.clone(),
                                         output: result_str.clone(),
                                     },
                                 }));
@@ -366,10 +411,7 @@ impl Runner {
                                 // Add tool result as a message
                                 messages.push(Message {
                                     role: "tool".to_string(),
-                                    content: format!(
-                                        "Tool '{}' returned: {}",
-                                        tool_call.name, result_str
-                                    ),
+                                    content: format!("Tool '{}' returned: {}", name, result_str),
                                 });
                             }
                         }
