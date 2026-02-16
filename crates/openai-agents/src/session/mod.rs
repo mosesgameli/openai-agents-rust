@@ -22,13 +22,11 @@ pub trait Session: Send + Sync {
 }
 
 /// Session settings
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SessionSettings {
     /// Maximum number of items to keep in session
     pub max_items: Option<usize>,
 }
-
 
 #[cfg(feature = "sqlite-session")]
 pub mod sqlite;

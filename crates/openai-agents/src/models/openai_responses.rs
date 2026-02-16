@@ -1,6 +1,6 @@
 //! OpenAI Responses API model provider
 
-use async_openai::{config::OpenAIConfig, types::*, Client};
+use async_openai::{Client, config::OpenAIConfig, types::*};
 use async_trait::async_trait;
 
 use crate::{

@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use serde_json::Value;
-use sqlx::{sqlite::SqlitePool, Row};
+use sqlx::{Row, sqlite::SqlitePool};
 
 use crate::error::{AgentError, Result};
 
@@ -83,12 +83,14 @@ impl Session for SqliteSession {
             .fetch_one(&self.pool)
             .await?;
 
-            sqlx::query("INSERT INTO sessions (session_id, item_index, item_data) VALUES (?, ?, ?)")
-                .bind(&self.session_id)
-                .bind(next_index)
-                .bind(data)
-                .execute(&self.pool)
-                .await?;
+            sqlx::query(
+                "INSERT INTO sessions (session_id, item_index, item_data) VALUES (?, ?, ?)",
+            )
+            .bind(&self.session_id)
+            .bind(next_index)
+            .bind(data)
+            .execute(&self.pool)
+            .await?;
         }
 
         Ok(())

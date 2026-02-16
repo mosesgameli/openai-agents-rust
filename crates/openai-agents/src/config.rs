@@ -1,6 +1,6 @@
 //! Configuration management for the OpenAI Agents SDK
 
-use async_openai::{config::OpenAIConfig, Client};
+use async_openai::{Client, config::OpenAIConfig};
 use std::sync::OnceLock;
 
 static DEFAULT_CLIENT: OnceLock<Client<OpenAIConfig>> = OnceLock::new();

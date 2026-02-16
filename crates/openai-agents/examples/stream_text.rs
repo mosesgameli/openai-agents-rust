@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match event {
             StreamEvent::RawResponse(raw) => {
                 print!("{}", raw.data);
-                use std::io::{stdout, Write};
+                use std::io::{Write, stdout};
                 stdout().flush().unwrap();
             }
             StreamEvent::RunItem(item_event) => match item_event.item {

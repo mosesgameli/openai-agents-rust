@@ -40,6 +40,5 @@ pub trait ToolInputGuardrail: Send + Sync {
 #[async_trait]
 pub trait ToolOutputGuardrail: Send + Sync {
     /// Check the tool output
-    async fn check(&self, tool_name: &str, output: &serde_json::Value)
-        -> Result<GuardrailResult>;
+    async fn check(&self, tool_name: &str, output: &serde_json::Value) -> Result<GuardrailResult>;
 }

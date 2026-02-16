@@ -39,11 +39,11 @@ async fn main() -> Result<()> {
                 // In this implementation, RawResponse only carries text deltas for now.
                 // We'll update the Runner to emit tool call deltas as well.
                 print!("{}", raw.data);
-                use std::io::{stdout, Write};
+                use std::io::{Write, stdout};
                 stdout().flush().unwrap();
             }
             StreamEvent::RunItem(item_event) => {
-                use openai_agents::{stream_events::RunItemEventName, RunItem};
+                use openai_agents::{RunItem, stream_events::RunItemEventName};
                 match item_event.name {
                     RunItemEventName::ToolCalled => {
                         if let RunItem::ToolCall { name, arguments } = item_event.item {

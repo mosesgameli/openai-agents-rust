@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use dotenvy::dotenv;
-use openai_agents::{function_tool, Agent, AgentHooks, RunConfig, RunHooks, Runner};
+use openai_agents::{Agent, AgentHooks, RunConfig, RunHooks, Runner, function_tool};
 use std::sync::Arc;
 
 #[function_tool]

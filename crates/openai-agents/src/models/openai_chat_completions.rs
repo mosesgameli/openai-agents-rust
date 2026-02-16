@@ -1,6 +1,6 @@
 //! OpenAI Chat Completions API model provider
 
-use async_openai::{config::OpenAIConfig, Client};
+use async_openai::{Client, config::OpenAIConfig};
 use async_trait::async_trait;
 
 use crate::{

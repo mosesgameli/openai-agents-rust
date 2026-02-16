@@ -1,6 +1,6 @@
 //! Enhanced tool example with function_tool macro
 
-use openai_agents::{function_tool, Agent, Result, Runner};
+use openai_agents::{Agent, Result, Runner, function_tool};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]

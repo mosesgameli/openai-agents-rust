@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use openai_agents::error::Result;
 use openai_agents::models::{
     CompletionRequest, CompletionResponse, CompletionStream, ModelProvider, StreamChunk,
     ToolCallDelta,
 };
 use openai_agents::{Agent, RunConfig, Runner, StreamEvent};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 struct MockModel {
@@ -151,19 +151,21 @@ async fn test_runner_run_streamed_tool_call() {
     let mut tool_output_received = false;
 
     while let Some(event) = events.next().await {
-        if let StreamEvent::RunItem(item_event) = event { match item_event.item {
-            openai_agents::RunItem::ToolCall { name, arguments } => {
-                assert_eq!(name, "get_weather");
-                assert_eq!(arguments, json!({"location": "London"}));
-                tool_called = true;
+        if let StreamEvent::RunItem(item_event) = event {
+            match item_event.item {
+                openai_agents::RunItem::ToolCall { name, arguments } => {
+                    assert_eq!(name, "get_weather");
+                    assert_eq!(arguments, json!({"location": "London"}));
+                    tool_called = true;
+                }
+                openai_agents::RunItem::ToolOutput { name, output } => {
+                    assert_eq!(name, "get_weather");
+                    assert!(output.contains("20"));
+                    tool_output_received = true;
+                }
+                _ => {}
             }
-            openai_agents::RunItem::ToolOutput { name, output } => {
-                assert_eq!(name, "get_weather");
-                assert!(output.contains("20"));
-                tool_output_received = true;
-            }
-            _ => {}
-        } }
+        }
     }
 
     assert!(tool_called);

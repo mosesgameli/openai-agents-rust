@@ -31,11 +31,7 @@ pub struct FunctionTool {
 
 impl FunctionTool {
     /// Create a new function tool
-    pub fn new(
-        name: impl Into<String>,
-        description: impl Into<String>,
-        schema: Value,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, description: impl Into<String>, schema: Value) -> Self {
         Self {
             name: name.into(),
             description: description.into(),
