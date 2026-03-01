@@ -139,7 +139,7 @@ impl OpenAIResponsesModel {
                             arguments: serde_json::from_str(&tool_call.function.arguments)
                                 .unwrap_or_default(),
                         }),
-                        _ => None, // 忽略 Custom 类型的工具调用
+                        _ => None, // Ignore Custom type tool calls
                     })
                     .collect()
             })
