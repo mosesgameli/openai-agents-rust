@@ -1,6 +1,17 @@
 //! OpenAI Responses API model provider
 
-use async_openai::{Client, config::OpenAIConfig, types::*};
+use async_openai::{
+    Client,
+    config::OpenAIConfig,
+    types::chat::{
+        ChatCompletionMessageToolCalls, ChatCompletionRequestAssistantMessageArgs,
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
+        ChatCompletionRequestUserMessageArgs, ChatCompletionTool, ChatCompletionTools,
+        CreateChatCompletionRequest, CreateChatCompletionRequestArgs, CreateChatCompletionResponse,
+        FunctionObject, ResponseFormat, ResponseFormatJsonSchema,
+    },
+};
+
 use async_trait::async_trait;
 
 use crate::{
@@ -67,16 +78,17 @@ impl OpenAIResponsesModel {
         builder.model(&request.model).messages(messages);
 
         if let Some(tools) = request.tools {
-            let openai_tools: Vec<ChatCompletionTool> = tools
+            let openai_tools: Vec<ChatCompletionTools> = tools
                 .into_iter()
-                .map(|t| ChatCompletionTool {
-                    r#type: ChatCompletionToolType::Function,
-                    function: FunctionObject {
-                        name: t.name,
-                        description: Some(t.description),
-                        parameters: Some(t.parameters),
-                        strict: Some(true),
-                    },
+                .map(|t| {
+                    ChatCompletionTools::Function(ChatCompletionTool {
+                        function: FunctionObject {
+                            name: t.name,
+                            description: Some(t.description),
+                            parameters: Some(t.parameters),
+                            strict: Some(true),
+                        },
+                    })
                 })
                 .collect();
             builder.tools(openai_tools);
@@ -120,11 +132,14 @@ impl OpenAIResponsesModel {
             .map(|calls| {
                 calls
                     .iter()
-                    .map(|call| ToolCall {
-                        id: call.id.clone(),
-                        name: call.function.name.clone(),
-                        arguments: serde_json::from_str(&call.function.arguments)
-                            .unwrap_or_default(),
+                    .filter_map(|call| match call {
+                        ChatCompletionMessageToolCalls::Function(tool_call) => Some(ToolCall {
+                            id: tool_call.id.clone(),
+                            name: tool_call.function.name.clone(),
+                            arguments: serde_json::from_str(&tool_call.function.arguments)
+                                .unwrap_or_default(),
+                        }),
+                        _ => None, // 忽略 Custom 类型的工具调用
                     })
                     .collect()
             })
