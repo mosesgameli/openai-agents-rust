@@ -1,5 +1,5 @@
 //! Agent definition and builder
-use schemars::JsonSchema;
+use schemars::{JsonSchema, SchemaGenerator};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
@@ -138,7 +138,7 @@ impl AgentBuilder {
 
     /// Set the expected output type for structured outputs
     pub fn output_type<T: JsonSchema + DeserializeOwned + Serialize + 'static>(mut self) -> Self {
-        let generator = schemars::r#gen::SchemaGenerator::default();
+        let generator = SchemaGenerator::default();
         let schema = generator.into_root_schema_for::<T>();
 
         // OpenAI expects a specific format for the JSON schema
