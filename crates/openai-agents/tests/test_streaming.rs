@@ -6,7 +6,7 @@ use openai_agents::models::{
     ToolCallDelta,
 };
 use openai_agents::{Agent, RunConfig, Runner, StreamEvent};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::sync::Arc;
 
 struct MockModel {
