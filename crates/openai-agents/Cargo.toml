@@ -33,7 +33,7 @@ schemars = { workspace = true }
 openai-agents-macros = { version = "0.1.0", path = "../openai-agents-macros" }
 
 # Optional features
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"], optional = true }
+sqlx = { version = "0.9", features = ["sqlite", "runtime-tokio-rustls"], optional = true }
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"], optional = true }
 
 [dev-dependencies]
